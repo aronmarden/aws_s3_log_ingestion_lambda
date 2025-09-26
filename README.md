@@ -8,6 +8,48 @@
 
 To forward data to New Relic you need access to a [New Relic License Key](https://docs.newrelic.com/docs/accounts/install-new-relic/account-setup/license-key).
 
+## Configuration
+
+### Log Sampling
+
+This Lambda function supports log sampling to reduce the volume of logs sent to New Relic. This can be useful for high-volume log sources where you want to analyze a representative sample rather than all logs.
+
+#### Environment Variables
+
+- **`LOG_SAMPLING_PERCENTAGE`** (optional): Specifies the percentage of logs to sample and send to New Relic. 
+  - **Range**: 1 to 100 (integer or decimal values)
+  - **Default**: 100 (no sampling - all logs are sent)
+  - **Examples**: 
+    - `100` - Send all logs (default behavior)
+    - `50` - Send 50% of logs randomly sampled
+    - `10` - Send 10% of logs randomly sampled  
+    - `1` - Send 1% of logs randomly sampled
+
+#### How Sampling Works
+
+- Sampling is applied at the individual log line level
+- Each log line is randomly selected based on the sampling percentage
+- The sampling is deterministic per invocation but random across different log files
+- Sampling statistics (total logs processed vs. sampled logs sent) are logged for monitoring
+
+#### Example Configurations
+
+**Serverless Framework (serverless.yml):**
+```yaml
+environment:
+  LOG_SAMPLING_PERCENTAGE: "25"  # Send 25% of logs
+```
+
+**CloudFormation Template:**
+```yaml
+Environment:
+  Variables:
+    LOG_SAMPLING_PERCENTAGE: "10"  # Send 10% of logs
+```
+
+**AWS Lambda Console:**
+Set the environment variable `LOG_SAMPLING_PERCENTAGE` to your desired percentage value.
+
 ## Install
 
 To install and configure the New Relic S3 log shipper Lambda, [see our documentation](https://docs.newrelic.com/docs/logs/enable-new-relic-logs/1-enable-logs/aws-lambda-sending-logs-s3).

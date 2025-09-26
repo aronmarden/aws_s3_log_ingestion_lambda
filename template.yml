@@ -25,6 +25,7 @@ Metadata:
           - PermissionsBoundary    
           - NRLogType
           - DebugEnabled
+          - LogSamplingPercentage
       
 Parameters:
   NRLicenseKey:
@@ -55,6 +56,10 @@ Parameters:
     Type: String
     Description: "(Optional) Indicates the expected compression factor of your logs. Used to check if logs could be sent to the API (that is limited to 1Mb of compressed data)"
     Default: ""
+  LogSamplingPercentage:
+    Type: String
+    Description: "(Optional) Percentage of logs to sample and send to New Relic (1-100). Default is 100 (no sampling)."
+    Default: "100"
   FunctionRole:
     Type: String
     Description: |
@@ -92,6 +97,7 @@ Resources:
           S3_IGNORE_PATTERN: !Ref S3IgnorePattern
           BATCH_SIZE_FACTOR: !Ref BatchSizeFactor
           ADDITIONAL_ATTRIBUTES: !Ref AdditionalAttributes
+          LOG_SAMPLING_PERCENTAGE: !Ref LogSamplingPercentage
       PermissionsBoundary: !If [ HasPermissionBoundary, !Ref PermissionsBoundary, !Ref AWS::NoValue ]
       Role: !Ref FunctionRole         
       Policies:
@@ -129,6 +135,7 @@ Resources:
           S3_IGNORE_PATTERN: !Ref S3IgnorePattern
           BATCH_SIZE_FACTOR: !Ref BatchSizeFactor
           ADDITIONAL_ATTRIBUTES: !Ref AdditionalAttributes
+          LOG_SAMPLING_PERCENTAGE: !Ref LogSamplingPercentage
       PermissionsBoundary: !If [ HasPermissionBoundary, !Ref PermissionsBoundary, !Ref AWS::NoValue ]          
       Policies:
         - Version: '2012-10-17'

@@ -12,6 +12,7 @@ import logging
 from smart_open import open
 import re
 from dateutil import parser
+import random
 
 
 logger = logging.getLogger()
@@ -143,6 +144,37 @@ def _get_log_type(log_type=None):
     This functions gets the New Relic logtype from env vars.
     """
     return log_type or _get_optional_env("LOG_TYPE", "")
+
+
+def _get_sampling_percentage(sampling_percentage=None):
+    """
+    This function gets the log sampling percentage from env vars.
+    Returns a float between 1.0 and 100.0 representing the percentage
+    of logs to sample. Defaults to 100.0 (no sampling).
+    """
+    if sampling_percentage is not None:
+        return float(sampling_percentage)
+    
+    percentage_str = _get_optional_env("LOG_SAMPLING_PERCENTAGE", "100")
+    try:
+        percentage = float(percentage_str)
+        if percentage < 1.0 or percentage > 100.0:
+            logger.warning(f"LOG_SAMPLING_PERCENTAGE must be between 1 and 100, got {percentage}. Using 100% (no sampling).")
+            return 100.0
+        return percentage
+    except ValueError:
+        logger.warning(f"Invalid LOG_SAMPLING_PERCENTAGE value: {percentage_str}. Using 100% (no sampling).")
+        return 100.0
+
+
+def _should_sample_log(sampling_percentage):
+    """
+    Determines whether a log should be sampled based on the sampling percentage.
+    Returns True if the log should be included, False otherwise.
+    """
+    if sampling_percentage >= 100.0:
+        return True
+    return random.random() * 100 < sampling_percentage
 
 
 def _setting_console_logging_level():
@@ -284,6 +316,9 @@ async def _fetch_data_from_s3(bucket, key, context):
             "The log file uploaded to S3 is larger than the supported max size of 400MB")
         return
     BATCH_SIZE_FACTOR = _get_batch_size_factor()
+    sampling_percentage = _get_sampling_percentage()
+    logger.info(f"Log sampling percentage: {sampling_percentage}%")
+    
     s3MetaData = {
         "invoked_function_arn": context.invoked_function_arn,
         "s3_bucket_name": bucket,
@@ -298,6 +333,8 @@ async def _fetch_data_from_s3(bucket, key, context):
         batch_request = []
         batch_counter = 1
         log_batch_size = 0
+        sampled_logs_count = 0
+        total_logs_count = 0
         start = time.time()
         with open(log_file_url, encoding='utf-8') as log_lines:
             if _isCloudTrail(key):
@@ -309,6 +346,13 @@ async def _fetch_data_from_s3(bucket, key, context):
                 log_lines = cloudtrail_events
 
             for index, log in enumerate(log_lines):
+                total_logs_count += 1
+                
+                # Apply sampling logic
+                if not _should_sample_log(sampling_percentage):
+                    continue
+                    
+                sampled_logs_count += 1
                 log_batch_size += sys.getsizeof(str(log))
                 if index % 500 == 0:
                     logger.debug(f"index: {index}")
@@ -324,11 +368,18 @@ async def _fetch_data_from_s3(bucket, key, context):
                     log_batches = []
                     log_batch_size = 0
                     batch_counter += 1
-        data = {"context": s3MetaData, "entry": log_batches}
-        batch_request.append(create_log_payload_request(data, session))
-        logger.info("Sending data to NR logs.....")
-        output = await asyncio.gather(*batch_request)
+        
+        # Send remaining logs if any
+        if log_batches:
+            data = {"context": s3MetaData, "entry": log_batches}
+            batch_request.append(create_log_payload_request(data, session))
+        
+        if batch_request:
+            logger.info("Sending data to NR logs.....")
+            output = await asyncio.gather(*batch_request)
+        
         end = time.time()
+        logger.info(f"Processed {total_logs_count} total logs, sampled {sampled_logs_count} logs ({sampling_percentage}% sampling)")
         logger.debug(f"time elapsed to send to NR Logs: {end - start}")
 
 
